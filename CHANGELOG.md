@@ -1,5 +1,67 @@
 # Changelog
 
+## [1.4.0](https://github.com/samtheruby/infinidysk/compare/v1.3.0...v1.4.0) (2026-09-11)
+
+
+### Features
+
+* **health:** PAR2 repair now fixes missing articles inside RAR releases ([#1348](https://github.com/samtheruby/infinidysk/issues/1348)) ([5c7bf79](https://github.com/samtheruby/infinidysk/commit/5c7bf7912307fbc76a02a0c06e55441bcf1a67d0))
+* **rclone:** built-in rclone mount managed from the admin UI ([5f60ed9](https://github.com/samtheruby/infinidysk/commit/5f60ed9446ba462f3850e8a16ff0d0a74163de09))
+* **ui:** activity chart separates client playback reads from app-triggered reads ([#1340](https://github.com/samtheruby/infinidysk/issues/1340)) ([79ad0ef](https://github.com/samtheruby/infinidysk/commit/79ad0ef29fda9f2e72f286350e1a66cb45844ad8))
+* **usenet:** benchmark configured provider limits above 50 connections ([#1360](https://github.com/samtheruby/infinidysk/issues/1360)) ([63bde75](https://github.com/samtheruby/infinidysk/commit/63bde757cbec76584324cf5ede9c27d775aefb0f))
+
+
+### Bug Fixes
+
+* **arr:** retain WebDAV items when Arr repair only partially completes ([#1381](https://github.com/samtheruby/infinidysk/issues/1381)) ([75420e9](https://github.com/samtheruby/infinidysk/commit/75420e92cbea9435d9c6d7ce1f2201f27b64c4b7))
+* **arr:** stop re-importing uploads rejected by queue rules ([#1380](https://github.com/samtheruby/infinidysk/issues/1380)) ([95e9598](https://github.com/samtheruby/infinidysk/commit/95e9598bf8c6ba777a5a58a32e6b5f09b720ba15))
+* **config:** check the rclone cache directory against the saved mounts ([39048c6](https://github.com/samtheruby/infinidysk/commit/39048c6a86ffcd13736e96d72bd523f730306037))
+* **config:** tell an absent rclone key from one the request clears ([f7b196c](https://github.com/samtheruby/infinidysk/commit/f7b196cffd605a8c422e9d149b337bfe8f7ad4af))
+* **deps:** Bump Scalar.AspNetCore from 2.17.1 to 2.17.2 ([#1339](https://github.com/samtheruby/infinidysk/issues/1339)) ([e3737c6](https://github.com/samtheruby/infinidysk/commit/e3737c6a45d2cf5d3ab07eb32907b4cb461ff582))
+* **deps:** Bump the npm-minor-and-patch group across 1 directory with 4 updates ([#1341](https://github.com/samtheruby/infinidysk/issues/1341)) ([4e32bb6](https://github.com/samtheruby/infinidysk/commit/4e32bb6b5368ca533efc4a96ad73c19355c53b84))
+* **deps:** Bump the react-router group across 1 directory with 5 updates ([#1337](https://github.com/samtheruby/infinidysk/issues/1337)) ([11c2c02](https://github.com/samtheruby/infinidysk/commit/11c2c027d465664806a0aebc6c013a8cd6a3efbf))
+* **docker:** ship the musl rapidyenc native in the Alpine image ([a09c950](https://github.com/samtheruby/infinidysk/commit/a09c950c2a6246d09833c3488b239672bf83ea03))
+* **docker:** ship the musl rapidyenc native in the Alpine image ([#1370](https://github.com/samtheruby/infinidysk/issues/1370)) ([5275648](https://github.com/samtheruby/infinidysk/commit/52756484649bfe974397e45dec012871af284ada))
+* **health:** defer contended PAR2 repairs ([#1383](https://github.com/samtheruby/infinidysk/issues/1383)) ([4bc4a21](https://github.com/samtheruby/infinidysk/commit/4bc4a212cb7e11fd71799989cb4191256283a644))
+* **health:** prevent false repairs when stored segment alternatives are available ([#1373](https://github.com/samtheruby/infinidysk/issues/1373)) ([6fb47d9](https://github.com/samtheruby/infinidysk/commit/6fb47d9fa94700a02880a2d6a4ece535708f2aaf))
+* **metrics:** count shared-stream pump fetches as client reads ([#1350](https://github.com/samtheruby/infinidysk/issues/1350)) ([581833f](https://github.com/samtheruby/infinidysk/commit/581833f81d0e36035d27727201f97b98f7144d9e))
+* **nntp:** keep playback working when a provider returns the wrong post ([#1357](https://github.com/samtheruby/infinidysk/issues/1357)) ([b4ede00](https://github.com/samtheruby/infinidysk/commit/b4ede004a35d47b966b3b4480167a47b9eaf9625))
+* **queue:** allow reviewed cleanup of large orphan backlogs ([#1352](https://github.com/samtheruby/infinidysk/issues/1352)) ([b5bf01e](https://github.com/samtheruby/infinidysk/commit/b5bf01efc8364de4a8b3479fc69e4a368a225e02))
+* **queue:** import independent RAR and 7z archive sets separately ([#1382](https://github.com/samtheruby/infinidysk/issues/1382)) ([c9250ba](https://github.com/samtheruby/infinidysk/commit/c9250bac749ed0c70522f6091225ee194dd74a23))
+* **rclone:** address review findings on the built-in mount ([e7c3d91](https://github.com/samtheruby/infinidysk/commit/e7c3d918b3f58c4c89c34855a4233593330daa31))
+* **rclone:** apply mount tuning changes and harden the edges ([2d34c0d](https://github.com/samtheruby/infinidysk/commit/2d34c0dc4e1e3d74a61c42fdd8803d75b550dfe9))
+* **rclone:** decide whether a daemon is running inside the mount gate ([8bc9f13](https://github.com/samtheruby/infinidysk/commit/8bc9f1328cba60a1fd7379eaff57e0a5f4de7d16))
+* **rclone:** do not grant the full cache cap on an unmeasured database volume ([855e9b7](https://github.com/samtheruby/infinidysk/commit/855e9b70659b20ada326487514f1602cce3899b2))
+* **rclone:** empty only rclone's own cache subtrees ([1411db2](https://github.com/samtheruby/infinidysk/commit/1411db26ac3ffd98a20551f02b4b60cc40224bb9))
+* **rclone:** give a rotated WebDAV password a way back ([9a9b030](https://github.com/samtheruby/infinidysk/commit/9a9b0304ffe2475b37f95699055f1bb95844e1d4))
+* **rclone:** harden the built-in mount against review findings ([0fc543d](https://github.com/samtheruby/infinidysk/commit/0fc543d799c355f13cf3556a320b6e93c5f6d765))
+* **rclone:** invalidate the directory cache on every rclone serving the tree ([5661211](https://github.com/samtheruby/infinidysk/commit/5661211040c349cadaa47a7c974e6bf99ad54161))
+* **rclone:** keep explicit zeros and disabled flags when importing a mount ([d8f32f6](https://github.com/samtheruby/infinidysk/commit/d8f32f61ba504181d74c380707ec3a15d243fb26))
+* **rclone:** keep one outstanding responsiveness probe per mount point ([0ec0a04](https://github.com/samtheruby/infinidysk/commit/0ec0a041bb66e0e3099adaaa14365871a95a1941))
+* **rclone:** qualify vfs/forget when two mounts share one remote ([a11f702](https://github.com/samtheruby/infinidysk/commit/a11f7027fdb493541b10669c66e3bb92757b4021))
+* **rclone:** recover mounts after a reconcile the supervisor did not run ([1e0cd5b](https://github.com/samtheruby/infinidysk/commit/1e0cd5b17ffcb333f0b2fedd1ed07c5105da4911))
+* **rclone:** report a failed unmount when reconnecting the WebDAV remote ([683c094](https://github.com/samtheruby/infinidysk/commit/683c094d21122e7ca299089b319dbb400375e1ef))
+* **rclone:** select the release checksum only from the signed message ([028ab5f](https://github.com/samtheruby/infinidysk/commit/028ab5f22241f0461381aa3281d3bd9daebe5bbe))
+* **rclone:** stop unedited mount settings reading as changed ([4240351](https://github.com/samtheruby/infinidysk/commit/42403511ef768426b4a60a9438e9c10d420731c9))
+* **rclone:** warn unless the remote root is mounted at the symlink directory ([eea78ab](https://github.com/samtheruby/infinidysk/commit/eea78abba81ef1fd1199d7f18ae23dc601c9b5ce))
+* **sab:** Sonarr/Radarr no longer loop on "Download doesn't contain intermediate path" after a job folder is removed ([#1347](https://github.com/samtheruby/infinidysk/issues/1347)) ([295c4cc](https://github.com/samtheruby/infinidysk/commit/295c4cc9eb0106a3efef7cc3ec7331ef2bbdeabb))
+* **setup:** agree on the rclone deployment branch on both sides ([5525460](https://github.com/samtheruby/infinidysk/commit/5525460b6dcd9dc3e62e23e2f655d8837eeb6ef8))
+* **setup:** keep the mounts a configured install already has ([0f1045a](https://github.com/samtheruby/infinidysk/commit/0f1045a9154c4743ee682b0c6dac3712be6b363e))
+* **ui:** match app read legend to the activity chart ([#1355](https://github.com/samtheruby/infinidysk/issues/1355)) ([2240674](https://github.com/samtheruby/infinidysk/commit/22406748e80a958e4808bdcf6607bea7f1b8846d))
+* **ui:** render app activity reads with a solid line ([#1349](https://github.com/samtheruby/infinidysk/issues/1349)) ([56f9d4e](https://github.com/samtheruby/infinidysk/commit/56f9d4e5535b8e371004ca15a2988b456e3151f3))
+* **usenet:** speed tests use articles available from the selected provider ([#1361](https://github.com/samtheruby/infinidysk/issues/1361)) ([699e0ca](https://github.com/samtheruby/infinidysk/commit/699e0ca95ca9c196bd81314b3a8cf3cc2a0f159a))
+
+
+### Performance Improvements
+
+* **health:** reduce redundant PAR2 repair work ([#1385](https://github.com/samtheruby/infinidysk/issues/1385)) ([9f72826](https://github.com/samtheruby/infinidysk/commit/9f72826d782e00332a0fed06b27b0a3259f7995c))
+* **rclone:** invalidate both rclones at once rather than in turn ([7f3d5f0](https://github.com/samtheruby/infinidysk/commit/7f3d5f0057e25a2a3300001c4a4a3e86f9a2ab0d))
+
+
+### Documentation
+
+* **rclone:** say which installations start in built-in mode ([c533194](https://github.com/samtheruby/infinidysk/commit/c533194f83b3f52fb83bd3881e8c815b1fc332d1))
+
 ## [1.3.0](https://github.com/infinidysk/infinidysk/compare/v1.2.7...v1.3.0) (2026-09-04)
 
 
