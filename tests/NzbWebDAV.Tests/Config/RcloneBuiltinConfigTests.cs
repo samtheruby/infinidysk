@@ -271,8 +271,109 @@ public class RcloneBuiltinConfigTests
     [InlineData(ConfigKeys.RcloneBuiltinMounts, "NZBDAV_CONFIG__RCLONE__BUILTIN__MOUNTS")]
     [InlineData(ConfigKeys.RcloneBuiltinRcPort, "NZBDAV_CONFIG__RCLONE__BUILTIN__RC_PORT")]
     [InlineData(ConfigKeys.RcloneBuiltinCacheDir, "NZBDAV_CONFIG__RCLONE__BUILTIN__CACHE_DIR")]
+    [InlineData(
+        ConfigKeys.RcloneBuiltinCacheSizeLimit,
+        "NZBDAV_CONFIG__RCLONE__BUILTIN__CACHE_SIZE_LIMIT")]
     public void BuiltinKeys_AreReachableFromTheHeadlessEnvironmentNamespace(string configKey, string expected)
     {
         Assert.Equal(expected, ConfigEnvMapping.ToEnvironmentVariableName(configKey));
+    }
+
+    [Fact]
+    public void ValidateConfigItems_RefusesACacheDirectoryInsideAnAlreadySavedMount()
+    {
+        // The settings page can save the cache directory on its own. Validating
+        // only the keys in the request let a cache directory inside a mount
+        // through -- rclone caching the filesystem into itself -- purely because
+        // the mount list was not part of that request.
+        var saved = new Dictionary<string, string>
+        {
+            [ConfigKeys.RcloneBuiltinMounts] =
+                """[{"Id":"library","MountPoint":"/mnt/remote/infinidysk"}]""",
+        };
+
+        var items = new[]
+        {
+            new ConfigItem
+            {
+                ConfigName = ConfigKeys.RcloneBuiltinCacheDir,
+                ConfigValue = "/mnt/remote/infinidysk/cache",
+            },
+        };
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            ConfigManager.ValidateConfigItems(items, savedValue: key => saved.GetValueOrDefault(key)));
+
+        Assert.Contains("inside the mount point", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidateConfigItems_RefusesAMountThatWouldSwallowTheSavedCacheDirectory()
+    {
+        // The same check from the other side: saving only the mount list.
+        var saved = new Dictionary<string, string>
+        {
+            [ConfigKeys.RcloneBuiltinCacheDir] = "/mnt/remote/infinidysk/cache",
+        };
+
+        var items = new[]
+        {
+            new ConfigItem
+            {
+                ConfigName = ConfigKeys.RcloneBuiltinMounts,
+                ConfigValue = """[{"Id":"library","MountPoint":"/mnt/remote/infinidysk"}]""",
+            },
+        };
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            ConfigManager.ValidateConfigItems(items, savedValue: key => saved.GetValueOrDefault(key)));
+
+        Assert.Contains("inside the mount point", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidateConfigItems_AcceptsACacheDirectory_WhenTheSameRequestClearsTheMounts()
+    {
+        // Clearing the list is a request to have no mounts. Reading the saved
+        // ones instead would refuse a cache directory over mounts the very same
+        // request is removing.
+        var saved = new Dictionary<string, string>
+        {
+            [ConfigKeys.RcloneBuiltinMounts] =
+                """[{"Id":"library","MountPoint":"/mnt/remote/infinidysk"}]""",
+        };
+
+        var items = new[]
+        {
+            new ConfigItem { ConfigName = ConfigKeys.RcloneBuiltinMounts, ConfigValue = "" },
+            new ConfigItem
+            {
+                ConfigName = ConfigKeys.RcloneBuiltinCacheDir,
+                ConfigValue = "/mnt/remote/infinidysk/cache",
+            },
+        };
+
+        ConfigManager.ValidateConfigItems(items, savedValue: key => saved.GetValueOrDefault(key));
+    }
+
+    [Fact]
+    public void ValidateConfigItems_AcceptsACacheDirectoryOutsideTheSavedMounts()
+    {
+        var saved = new Dictionary<string, string>
+        {
+            [ConfigKeys.RcloneBuiltinMounts] =
+                """[{"Id":"library","MountPoint":"/mnt/remote/infinidysk"}]""",
+        };
+
+        var items = new[]
+        {
+            new ConfigItem
+            {
+                ConfigName = ConfigKeys.RcloneBuiltinCacheDir,
+                ConfigValue = "/config/rclone/cache",
+            },
+        };
+
+        ConfigManager.ValidateConfigItems(items, savedValue: key => saved.GetValueOrDefault(key));
     }
 }

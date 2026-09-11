@@ -90,6 +90,20 @@ volumes:
   - /mnt:/mnt:rshared`;
 
 /** Turns a failed request into something an operator can act on. */
+/**
+ * Reads a JSON body, treating a non-2xx response as a failure.
+ *
+ * Without this a 500 was cast straight to the success shape, so an error body
+ * arrived on screen as an apply that worked.
+ */
+async function readJson<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error || `Request failed (${response.status})`);
+  }
+  return (await response.json()) as T;
+}
+
 function describeFailure(action: string, error: unknown): string {
   const detail = error instanceof Error ? error.message : String(error);
   return `Could not ${action}: ${detail}. Check that InfiniDysk is still running and try again.`;
@@ -130,7 +144,7 @@ export function BuiltinMountSettings({ config, setNewConfig }: BuiltinMountSetti
   const refreshStatus = useCallback(async () => {
     try {
       const response = await fetch(withUrlBase("/api/rclone-mounts/status"));
-      setStatus((await response.json()) as StatusResponse);
+      setStatus(await readJson<StatusResponse>(response));
     } catch {
       setStatus(null);
     }
@@ -148,7 +162,7 @@ export function BuiltinMountSettings({ config, setNewConfig }: BuiltinMountSetti
     setApplyResult(null);
     try {
       const response = await fetch(withUrlBase("/api/rclone-mounts/apply"), { method: "POST" });
-      setApplyResult((await response.json()) as ApplyResponse);
+      setApplyResult(await readJson<ApplyResponse>(response));
       await refreshStatus();
     } catch (error) {
       setApplyResult({ errors: [describeFailure("apply the mounts", error)] });
@@ -165,7 +179,7 @@ export function BuiltinMountSettings({ config, setNewConfig }: BuiltinMountSetti
           withUrlBase(`/api/rclone-mounts/remount?id=${encodeURIComponent(id)}`),
           { method: "POST" },
         );
-        setApplyResult((await response.json()) as ApplyResponse);
+        setApplyResult(await readJson<ApplyResponse>(response));
         await refreshStatus();
       } catch (error) {
         setApplyResult({ errors: [describeFailure(`remount '${id}'`, error)] });
@@ -184,7 +198,7 @@ export function BuiltinMountSettings({ config, setNewConfig }: BuiltinMountSetti
         method: "POST",
         body,
       });
-      setImportResult((await response.json()) as ImportResponse);
+      setImportResult(await readJson<ImportResponse>(response));
     } catch (error) {
       setImportResult({ warnings: [describeFailure("read the rclone settings", error)] });
     } finally {
@@ -202,7 +216,7 @@ export function BuiltinMountSettings({ config, setNewConfig }: BuiltinMountSetti
         method: "POST",
         body,
       });
-      const result = (await response.json()) as ApplyResponse;
+      const result = await readJson<ApplyResponse>(response);
       setCredentialResult(result);
       if ((result.errors ?? []).length === 0) setWebdavPassword("");
       await refreshStatus();
@@ -216,13 +230,14 @@ export function BuiltinMountSettings({ config, setNewConfig }: BuiltinMountSetti
   const loadLogs = useCallback(async () => {
     try {
       const response = await fetch(withUrlBase("/api/rclone-mounts/logs"));
-      const body = (await response.json()) as { lines?: string[] };
+      const body = await readJson<{ lines?: string[] }>(response);
       setLogLines(body.lines ?? []);
     } catch (error) {
       setLogLines([describeFailure("read the rclone log", error)]);
     }
   }, []);
 
+  const remoteConfigured = status?.remoteConfigured === true;
   const symlinkMountDir = status?.symlinkMountDir ?? undefined;
   const symlinkRootCovered = coversSymlinkRoot(mounts, symlinkMountDir);
   const externalRcloneConfigured = Boolean(config["rclone.host"]?.trim());
@@ -310,6 +325,12 @@ export function BuiltinMountSettings({ config, setNewConfig }: BuiltinMountSetti
                       // value that cannot be read is left for the operator to
                       // correct rather than silently discarded.
                       const typed = e.target.value.trim();
+
+                      // Same rounding trap as read ahead: the box shows a
+                      // rounded size, so re-parsing unchanged text produces a
+                      // different byte count. Unchanged text is not an edit.
+                      if (typed === cacheSizeLimitText) return;
+
                       const bytes = typed === "" ? null : parseSize(typed);
                       if (typed !== "" && bytes === null) return;
                       setNewConfig({
@@ -355,15 +376,24 @@ export function BuiltinMountSettings({ config, setNewConfig }: BuiltinMountSetti
         </SettingsCard>
       )}
 
-      {enabled && status?.running && status.remoteConfigured === false && (
+      {enabled && status?.running && (
         <SettingsCard
           icon="key"
-          title="Connect to your library"
-          description="InfiniDysk needs its own WebDAV password once, to let rclone read the library."
+          title={remoteConfigured ? "Reconnect to your library" : "Connect to your library"}
+          description={
+            remoteConfigured
+              ? "Enter the WebDAV password again whenever you change it, so rclone can keep reading the library."
+              : "InfiniDysk needs its own WebDAV password once, to let rclone read the library."
+          }
         >
           <p className="mb-3 text-sm leading-relaxed text-base-content/70">
             This is the password under Settings, WebDAV. It is stored only in rclone&apos;s own
             configuration, and InfiniDysk never shows it again.
+            {remoteConfigured
+              ? " Rclone authenticated when the mount was made and keeps using what it had, so a" +
+                " changed password needs this to be entered again -- the mounts look healthy until" +
+                " they are."
+              : ""}
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="min-w-0 flex-1 space-y-1">
@@ -380,7 +410,13 @@ export function BuiltinMountSettings({ config, setNewConfig }: BuiltinMountSetti
               onClick={() => void saveWebdavPassword()}
               disabled={!webdavPassword.trim() || busy === "saving-password"}
             >
-              {busy === "saving-password" ? <Spinner /> : "Connect and mount"}
+              {busy === "saving-password" ? (
+                <Spinner />
+              ) : remoteConfigured ? (
+                "Reconnect and remount"
+              ) : (
+                "Connect and mount"
+              )}
             </Button>
           </div>
           {credentialResult &&
@@ -521,16 +557,17 @@ export function BuiltinMountSettings({ config, setNewConfig }: BuiltinMountSetti
                           key={mount.ReadAheadBytes ?? "unset"}
                           className="w-full"
                           placeholder="rclone default"
-                          defaultValue={
-                            mount.ReadAheadBytes ? formatBytes(mount.ReadAheadBytes) : ""
-                          }
+                          defaultValue={readAheadDisplay(mount.ReadAheadBytes)}
                           onBlur={(e) => {
-                            // The field shows a rounded size, so re-parsing it
-                            // unchanged can differ from the imported byte count.
-                            // Only write when the operator actually changed it.
+                            // Compared as text, not as bytes. The field shows a
+                            // rounded size, so an imported 12,345,678 bytes
+                            // displays as "12 MB" and parses back as 12,582,912 --
+                            // and comparing those two numbers made merely
+                            // focusing and leaving the field retune the mount.
+                            if (e.target.value.trim() === readAheadDisplay(mount.ReadAheadBytes))
+                              return;
+
                             const parsed = parseSize(e.target.value);
-                            const current = mount.ReadAheadBytes ?? null;
-                            if (parsed === current) return;
                             writeMounts(upsertMount(mounts, { ...mount, ReadAheadBytes: parsed }));
                           }}
                         />
@@ -832,6 +869,15 @@ export function BuiltinMountSettings({ config, setNewConfig }: BuiltinMountSetti
   );
 }
 
+/**
+ * What the read-ahead box shows for a stored byte count. Shared by the value and
+ * the blur comparison so "did the operator type something?" is answered by the
+ * text on screen rather than by a round trip through rounded formatting.
+ */
+function readAheadDisplay(bytes: number | null | undefined): string {
+  return bytes ? formatBytes(bytes) : "";
+}
+
 /** Seconds from the status API back into the `[d.]hh:mm:ss` form config stores. */
 function secondsToTimeSpan(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
@@ -851,6 +897,7 @@ export function isBuiltinMountSettingsUpdated(
     config["rclone.builtin.enabled"] !== newConfig["rclone.builtin.enabled"] ||
     config["rclone.builtin.mounts"] !== newConfig["rclone.builtin.mounts"] ||
     config["rclone.builtin.rc-port"] !== newConfig["rclone.builtin.rc-port"] ||
-    config["rclone.builtin.cache-dir"] !== newConfig["rclone.builtin.cache-dir"]
+    config["rclone.builtin.cache-dir"] !== newConfig["rclone.builtin.cache-dir"] ||
+    config["rclone.builtin.cache-size-limit"] !== newConfig["rclone.builtin.cache-size-limit"]
   );
 }

@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BuiltinMountSettings } from "./builtin-mount";
+import { BuiltinMountSettings, isBuiltinMountSettingsUpdated } from "./builtin-mount";
+import type { BuiltinMount } from "./builtin-mount-model";
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -69,6 +70,9 @@ const savedRow = {
   configured: true,
   enabled: true,
   mounted: false,
+  // The backend fills this in for a mount that does not set it, so a row that
+  // left it out would make every unedited mount read as changed.
+  readAheadBytes: 512 * 1024 * 1024,
 };
 
 describe("BuiltinMountSettings", () => {
@@ -121,7 +125,11 @@ describe("BuiltinMountSettings", () => {
     expect(screen.getByText("Connect and mount")).toBeTruthy();
   });
 
-  it("does not ask for a password once the remote exists", async () => {
+  it("offers to reconnect once the remote exists", async () => {
+    // Rclone authenticated when the mount was made and keeps using what it had,
+    // so a rotated WebDAV password needs entering again. Hiding the form once a
+    // remote exists left no way to do that: the remote and the mount table both
+    // look healthy while every read fails.
     respondWith({
       status: true,
       enabled: true,
@@ -134,6 +142,8 @@ describe("BuiltinMountSettings", () => {
 
     await waitFor(() => expect(screen.getByText("Mounts")).toBeTruthy());
     expect(screen.queryByText("Connect to your library")).toBeNull();
+    expect(screen.getByText("Reconnect to your library")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reconnect and remount" })).toBeTruthy();
   });
 
   it("reports a configured mount that is not mounted yet", async () => {
@@ -412,6 +422,19 @@ describe("BuiltinMountSettings", () => {
     );
   });
 
+  it("treats an edited cache size limit as an unsaved change", () => {
+    // Save is enabled from this comparison. A setting missing from it looks
+    // saved the moment it is typed, and the value is silently dropped.
+    const saved = { "rclone.builtin.enabled": "true" };
+
+    expect(
+      isBuiltinMountSettingsUpdated(saved, {
+        ...saved,
+        "rclone.builtin.cache-size-limit": String(8 * 1024 ** 3),
+      }),
+    ).toBe(true);
+  });
+
   it("shows the cache directory and size limit without opening anything first", async () => {
     // Both decide how much disk rclone takes, which is the question an operator
     // opens this card to answer. Hiding them behind a disclosure meant nobody
@@ -544,5 +567,98 @@ describe("BuiltinMountSettings", () => {
     screen.getByText("Read my rclone server").click();
 
     await waitFor(() => expect(screen.getByText(/connection refused/)).toBeTruthy());
+  });
+
+  it("does not resize the cache when the size box is only focused and left", async () => {
+    // Same rounding trap as read ahead, in the install-wide box.
+    let saved: Record<string, string> = {};
+    respondWith({
+      status: true,
+      enabled: true,
+      running: true,
+      remoteConfigured: true,
+      mounts: [savedRow],
+    });
+    render(
+      createElement(RecordingHarness, {
+        initial: { ...enabledConfig, "rclone.builtin.cache-size-limit": "12345678" },
+        onChange: (config: Record<string, string>) => {
+          saved = config;
+        },
+      }),
+    );
+
+    const input = await screen.findByLabelText(/cache size limit/i);
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+
+    expect(saved["rclone.builtin.cache-size-limit"]).toBe("12345678");
+  });
+
+  it("does not retune read ahead when the field is only focused and left", async () => {
+    // The box shows a rounded size, so an imported 12,345,678 bytes displays as
+    // "12 MB" and parses back as 12,582,912. Comparing those two numbers made
+    // merely tabbing through the field rewrite the mount.
+    let saved: Record<string, string> = {};
+    respondWith({
+      status: true,
+      enabled: true,
+      running: true,
+      remoteConfigured: true,
+      mounts: [savedRow],
+    });
+    render(
+      createElement(RecordingHarness, {
+        initial: {
+          "rclone.builtin.enabled": "true",
+          "rclone.builtin.mounts":
+            '[{"Id":"library","MountPoint":"/mnt/remote/infinidysk","ReadAheadBytes":12345678}]',
+        },
+        onChange: (config: Record<string, string>) => {
+          saved = config;
+        },
+      }),
+    );
+
+    const input = await screen.findByLabelText<HTMLInputElement>(/read ahead/i);
+    const displayed = input.value;
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+
+    const [unchanged] = JSON.parse(saved["rclone.builtin.mounts"] ?? "[]") as BuiltinMount[];
+    expect(unchanged?.ReadAheadBytes).toBe(12345678);
+    expect(displayed).not.toBe("12345678");
+  });
+
+  it("writes read ahead when the field is actually edited", async () => {
+    let saved: Record<string, string> = {};
+    respondWith({
+      status: true,
+      enabled: true,
+      running: true,
+      remoteConfigured: true,
+      mounts: [savedRow],
+    });
+    render(
+      createElement(RecordingHarness, {
+        initial: {
+          "rclone.builtin.enabled": "true",
+          "rclone.builtin.mounts":
+            '[{"Id":"library","MountPoint":"/mnt/remote/infinidysk","ReadAheadBytes":12345678}]',
+        },
+        onChange: (config: Record<string, string>) => {
+          saved = config;
+        },
+      }),
+    );
+
+    const input = await screen.findByLabelText<HTMLInputElement>(/read ahead/i);
+    fireEvent.change(input, { target: { value: "256M" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      const [edited] = JSON.parse(saved["rclone.builtin.mounts"] ?? "[]") as BuiltinMount[];
+      expect(edited?.ReadAheadBytes).toBe(256 * 1024 * 1024);
+    });
   });
 });

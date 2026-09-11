@@ -23,6 +23,9 @@ const mount = (overrides: Partial<BuiltinMount> = {}): BuiltinMount => ({
   VfsCacheMode: "full",
   AllowOther: true,
   Links: true,
+  // Mirrors RcloneMountConfig's own default, which the backend fills in for a
+  // stored mount that leaves the field out.
+  ReadAheadBytes: 512 * 1024 * 1024,
   ...overrides,
 });
 
@@ -193,12 +196,29 @@ describe("parseMounts entry filtering", () => {
 });
 
 describe("coversSymlinkRoot", () => {
-  // A mount higher up the tree serves everything beneath it, so warning about
-  // this setup told the operator their working library was broken.
-  it("counts a parent mount as covering the symlink root", () => {
+  // Imports point at `<mount-dir>/.ids/...`, and `.ids` is a child of the remote
+  // root. Mounting the root at /mnt puts it at /mnt/.ids, so /mnt/remote is not
+  // served by a mount at /mnt however much it contains it.
+  it("does not count a parent mount as covering the symlink root", () => {
     const mounts = parseMounts('[{"Id":"library","MountPoint":"/mnt/remote"}]');
 
-    expect(coversSymlinkRoot(mounts, "/mnt/remote/infinidysk")).toBe(true);
+    expect(coversSymlinkRoot(mounts, "/mnt/remote/infinidysk")).toBe(false);
+  });
+
+  // The same failure from the other direction: a subtree mounted at the right
+  // directory exposes that subtree's children there, not the root's.
+  it("does not count a subtree mounted at the symlink root", () => {
+    const mounts = parseMounts(
+      '[{"Id":"library","MountPoint":"/mnt/remote","RemotePath":"/content"}]',
+    );
+
+    expect(coversSymlinkRoot(mounts, "/mnt/remote")).toBe(false);
+  });
+
+  it("is satisfied by the remote root mounted at the symlink root", () => {
+    const mounts = parseMounts('[{"Id":"library","MountPoint":"/mnt/remote","RemotePath":"/"}]');
+
+    expect(coversSymlinkRoot(mounts, "/mnt/remote")).toBe(true);
   });
 
   it("does not count a sibling directory as covering it", () => {
@@ -258,12 +278,35 @@ describe("mountsMatchServer", () => {
     vfsCacheMode: "full",
     configured: true,
     enabled: true,
+    // What the status endpoint actually reports for a mount that never set it:
+    // the backend's own default, not an absent field.
+    readAheadBytes: 512 * 1024 * 1024,
   };
 
   it("matches when the edited mounts equal what the backend saved", () => {
     const mounts = parseMounts('[{"Id":"library","MountPoint":"/mnt/remote"}]');
 
     expect(mountsMatchServer(mounts, [saved])).toBe(true);
+  });
+
+  // The wizard writes a minimal mount with no read-ahead. Reading that absence
+  // as "no read-ahead" while the backend reports its 512 MiB default made an
+  // untouched mount look edited, disabling Apply behind a "save first" warning
+  // the operator could do nothing about.
+  it("matches a wizard-written mount against the default the backend fills in", () => {
+    const mounts = parseMounts(
+      '[{"Id":"library","MountPoint":"/mnt/remote","RemotePath":"/","Enabled":true}]',
+    );
+
+    expect(mountsMatchServer(mounts, [saved])).toBe(true);
+  });
+
+  it("still spots read-ahead explicitly turned off", () => {
+    const mounts = parseMounts(
+      '[{"Id":"library","MountPoint":"/mnt/remote","ReadAheadBytes":null}]',
+    );
+
+    expect(mountsMatchServer(mounts, [saved])).toBe(false);
   });
 
   it("spots an edited field", () => {
@@ -299,7 +342,7 @@ describe("mountsMatchServer", () => {
 
     expect(
       mountsMatchServer(
-        base.map((m) => ({ ...m, ReadAheadBytes: 536870912 })),
+        base.map((m) => ({ ...m, ReadAheadBytes: 1024 * 1024 * 1024 })),
         [saved],
       ),
     ).toBe(false);
@@ -321,17 +364,30 @@ describe("mountsMatchServer", () => {
         [saved],
       ),
     ).toBe(false);
+    // An import is the only way this one changes, and it must not read as saved.
+    expect(
+      mountsMatchServer(
+        base.map((m) => ({ ...m, VfsCacheMaxSizeBytes: 21474836480 })),
+        [saved],
+      ),
+    ).toBe(false);
   });
 
   it("matches when those fields agree across the wire formats", () => {
     // The status endpoint reports seconds; the form holds a TimeSpan string.
     const mounts = parseMounts(
-      '[{"Id":"library","MountPoint":"/mnt/remote","VfsCacheMaxAge":"06:00:00","ReadAheadBytes":536870912,"Links":false}]',
+      '[{"Id":"library","MountPoint":"/mnt/remote","VfsCacheMaxAge":"06:00:00","DirCacheTime":"01:00:00","ReadAheadBytes":536870912,"Links":false}]',
     );
 
     expect(
       mountsMatchServer(mounts, [
-        { ...saved, vfsCacheMaxAgeSeconds: 21600, readAheadBytes: 536870912, links: false },
+        {
+          ...saved,
+          vfsCacheMaxAgeSeconds: 21600,
+          dirCacheTimeSeconds: 3600,
+          readAheadBytes: 536870912,
+          links: false,
+        },
       ]),
     ).toBe(true);
   });

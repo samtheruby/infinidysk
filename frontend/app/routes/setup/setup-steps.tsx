@@ -14,6 +14,7 @@ import {
   Spinner,
   Toggle,
   Tooltip,
+  useManagedEnvMap,
 } from "~/components/ui";
 import type {
   SetupWizardIngestionMethod,
@@ -168,6 +169,7 @@ function SymlinkPlaybackStep({
   const [testMessage, setTestMessage] = useState("");
   const [testWarning, setTestWarning] = useState(false);
   const [copied, setCopied] = useState(false);
+  const managedEnv = useManagedEnvMap();
   const config = draft.config;
   const usesBuiltin = config["rclone.builtin.enabled"] === "true";
   const rcEnabled = config["rclone.rc-enabled"] === "true";
@@ -277,9 +279,7 @@ function SymlinkPlaybackStep({
                 },
               ] as const
             }
-            onChange={(value) =>
-              updateConfig(updateDraft, "rclone.builtin.enabled", String(value === "builtin"))
-            }
+            onChange={(value) => selectRcloneSource(updateDraft, managedEnv, value === "builtin")}
           />
         </Field>
       </ManagedSetting>
@@ -1157,6 +1157,26 @@ export function StepSection({
   );
 }
 
+/**
+ * Switches between the built-in daemon and a sidecar.
+ *
+ * Turning notifications off with the built-in daemon is the other half of
+ * `applyStrategy` turning them on for the sidecar: they address a separate
+ * rclone container, and the wizard hides the host field once there is no such
+ * container. Left on, setup submits notifications enabled with an empty host,
+ * which the server refuses over a setting the operator can no longer see.
+ */
+function selectRcloneSource(updateDraft: UpdateDraft, managedEnv: ManagedEnvMap, builtin: boolean) {
+  updateDraft((current) => ({
+    ...current,
+    config: {
+      ...current.config,
+      "rclone.builtin.enabled": String(builtin),
+      ...(builtin && !("rclone.rc-enabled" in managedEnv) ? { "rclone.rc-enabled": "false" } : {}),
+    },
+  }));
+}
+
 function updateConfig(updateDraft: UpdateDraft, key: string, value: string) {
   updateDraft((current) => ({
     ...current,
@@ -1181,6 +1201,8 @@ function settingLabel(key: string): string {
     "api.import-strategy": "Import strategy",
     "usenet.segment-cache.enabled": "Segment Cache",
     "rclone.mount-dir": "Rclone mount directory",
+    "rclone.builtin.enabled": "Run rclone inside InfiniDysk",
+    "rclone.builtin.mounts": "Built-in mount",
     "rclone.rc-enabled": "RC notifications",
     "rclone.host": "Rclone RC host",
     "rclone.user": "Rclone RC user",

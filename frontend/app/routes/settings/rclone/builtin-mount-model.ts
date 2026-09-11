@@ -36,12 +36,19 @@ export type MountState = {
   variant: "success" | "warning" | "neutral";
 };
 
+/**
+ * What the backend fills in for a field a stored mount leaves out. These have to
+ * agree with RcloneMountConfig's own defaults: the status endpoint reports the
+ * effective value, so a default only known on one side makes an unedited mount
+ * read as changed and disables Apply behind a "save first" warning.
+ */
 const MOUNT_DEFAULTS = {
   RemotePath: "/",
   Enabled: true,
   VfsCacheMode: "full",
   AllowOther: true,
   Links: true,
+  ReadAheadBytes: 512 * 1024 * 1024,
 } as const;
 
 /**
@@ -124,14 +131,22 @@ export function newMount(index: number, symlinkMountDir: string | undefined): Bu
 
 const trimTrailingSlash = (path: string) => (path.length > 1 ? path.replace(/\/+$/, "") : path);
 
+/** Whether a mount serves the remote's root rather than a subtree of it. */
+const isRootRemote = (remotePath: string | undefined) =>
+  trimTrailingSlash((remotePath ?? "/").trim() || "/") === "/";
+
 /**
- * Whether an enabled mount covers the directory symlink imports resolve through.
- * False means imported files will not play, however healthy the mounts look, so
- * it is worth saying out loud rather than leaving to be discovered at playback.
+ * Whether an enabled mount puts the WebDAV root at the directory symlink imports
+ * resolve through. False means imported files will not play, however healthy the
+ * mounts look, so it is worth saying out loud rather than leaving to be
+ * discovered at playback.
  *
- * A mount higher up the tree covers everything beneath it, so `/mnt/remote`
- * covers `/mnt/remote/infinidysk`. Comparing for equality alone warned about
- * setups that work.
+ * Containing the directory is not the same as covering it. An import points at
+ * `<mount-dir>/.ids/...`, and `.ids` is a child of the *remote* root: mounting
+ * the root at `/mnt` leaves it at `/mnt/.ids`, so a mount-dir of `/mnt/library`
+ * resolves to nothing. Mounting a subtree such as `/content` at the mount-dir
+ * fails the same way, from the other direction. Only the remote root, at exactly
+ * the configured directory, actually serves those paths.
  */
 export function coversSymlinkRoot(
   mounts: BuiltinMount[],
@@ -141,15 +156,12 @@ export function coversSymlinkRoot(
   if (!root) return true;
 
   const normalizedRoot = trimTrailingSlash(root);
-  return mounts.some((mount) => {
-    if (!mount.Enabled) return false;
-    const mountPoint = trimTrailingSlash(mount.MountPoint ?? "");
-    if (!mountPoint) return false;
-    return (
-      mountPoint === normalizedRoot ||
-      normalizedRoot.startsWith(mountPoint === "/" ? "/" : `${mountPoint}/`)
-    );
-  });
+  return mounts.some(
+    (mount) =>
+      mount.Enabled &&
+      isRootRemote(mount.RemotePath) &&
+      trimTrailingSlash((mount.MountPoint ?? "").trim()) === normalizedRoot,
+  );
 }
 
 /**
@@ -232,6 +244,8 @@ type ServerMountRow = {
   links?: boolean;
   readAheadBytes?: number | null;
   vfsCacheMaxAgeSeconds?: number;
+  dirCacheTimeSeconds?: number;
+  vfsCacheMaxSizeBytes?: number | null;
 };
 
 type MountSignatureInput = {
@@ -244,6 +258,7 @@ type MountSignatureInput = {
   readAheadBytes: number | null;
   cacheAgeHours: number;
   dirCacheHours: number;
+  cacheMaxSizeBytes: number | null;
 };
 
 // Every field the tab can edit has to appear here, or editing it would leave
@@ -259,6 +274,7 @@ const mountSignature = (m: MountSignatureInput) =>
     m.readAheadBytes ?? "default",
     m.cacheAgeHours,
     m.dirCacheHours,
+    m.cacheMaxSizeBytes ?? "auto",
   ].join("|");
 
 /**
@@ -289,6 +305,7 @@ export function mountsMatchServer(
         readAheadBytes: mount.ReadAheadBytes ?? null,
         cacheAgeHours: timeSpanToHours(mount.VfsCacheMaxAge, DEFAULT_CACHE_AGE_HOURS),
         dirCacheHours: timeSpanToHours(mount.DirCacheTime, DEFAULT_DIR_CACHE_HOURS),
+        cacheMaxSizeBytes: mount.VfsCacheMaxSizeBytes ?? null,
       }),
     )
     .sort();
@@ -313,6 +330,7 @@ export function mountsMatchServer(
           row.dirCacheTimeSeconds === undefined
             ? DEFAULT_DIR_CACHE_HOURS
             : Math.round(row.dirCacheTimeSeconds / 3600),
+        cacheMaxSizeBytes: row.vfsCacheMaxSizeBytes ?? null,
       }),
     )
     .sort();

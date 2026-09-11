@@ -77,12 +77,61 @@ public sealed class RcloneMountReconciler(
             .Where(m => m.Enabled)
             .ToDictionary(m => m.MountPoint, m => m, StringComparer.Ordinal);
 
+        // Mounts whose live tuning no longer matches what is configured. rclone
+        // applies VFS options at mount time, so a changed cache mode or read
+        // ahead only takes effect on a remount -- without this the settings save,
+        // the pass reports success, and the mount keeps running as it was.
+        var restale = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var mount in wanted.Values)
+        {
+            if (!livePoints.TryGetValue(mount.MountPoint, out var liveFs)) continue;
+            if (!string.Equals(NormalizeFs(liveFs), NormalizeFs(BuildFs(mount)), StringComparison.Ordinal)) continue;
+            if (!await LiveTuningMatchesAsync(mount, cancellationToken).ConfigureAwait(false))
+                restale.Add(mount.MountPoint);
+        }
+
+        // Whether anything will need mounting, decided before a single mount is
+        // touched: if the remote turns out to be unusable we must not have taken
+        // the library down on the way to finding that out.
+        var needsMount = wanted.Values.Any(mount =>
+            !livePoints.TryGetValue(mount.MountPoint, out var liveFs)
+            || restale.Contains(mount.MountPoint)
+            || !string.Equals(NormalizeFs(liveFs), NormalizeFs(BuildFs(mount)), StringComparison.Ordinal));
+
+        if (needsMount)
+        {
+            var required = await client.ListRemotes(cancellationToken).ConfigureAwait(false);
+            if (!required.Success)
+            {
+                // Same reasoning as the mount listing above: a question we could
+                // not ask is not an answer. Nothing has been unmounted yet, so
+                // the report is accurate.
+                errors.Add(
+                    $"Could not read the built-in rclone's remotes: {required.Error ?? "unknown error"}. " +
+                    "No mounts were changed.");
+                return new RcloneReconcileResult(mounted, unmounted, errors);
+            }
+
+            if (!(required.Remotes?.Contains(RemoteName, StringComparer.Ordinal) ?? false))
+            {
+                // The WebDAV password is never stored in plaintext, so the remote
+                // can only be created from a password the user supplies once.
+                // Until then, mounting would produce authentication failures that
+                // look like a broken mount rather than missing setup.
+                errors.Add(
+                    $"The '{RemoteName}' rclone remote does not exist yet. Provide the WebDAV password " +
+                    "for the built-in mount before mounting.");
+                return new RcloneReconcileResult(mounted, unmounted, errors);
+            }
+        }
+
         // Remove first, so a mount whose remote path changed frees its mount point
         // before the replacement is attempted.
         foreach (var (mountPoint, liveFs) in livePoints)
         {
             var keep = wanted.TryGetValue(mountPoint, out var config)
-                       && string.Equals(NormalizeFs(liveFs), NormalizeFs(BuildFs(config)), StringComparison.Ordinal);
+                       && string.Equals(NormalizeFs(liveFs), NormalizeFs(BuildFs(config)), StringComparison.Ordinal)
+                       && !restale.Contains(mountPoint);
             if (keep) continue;
 
             var response = await client.UnmountFs(mountPoint, cancellationToken).ConfigureAwait(false);
@@ -100,18 +149,6 @@ public sealed class RcloneMountReconciler(
         var toMount = wanted.Values.Where(m => !livePoints.ContainsKey(m.MountPoint)).ToList();
         if (toMount.Count == 0)
             return new RcloneReconcileResult(mounted, unmounted, errors);
-
-        if (!await RemoteExistsAsync(cancellationToken).ConfigureAwait(false))
-        {
-            // The WebDAV password is never stored in plaintext, so the remote can
-            // only be created from a password the user supplies once. Until then,
-            // mounting would produce authentication failures that look like a
-            // broken mount rather than missing setup.
-            errors.Add(
-                $"The '{RemoteName}' rclone remote does not exist yet. Provide the WebDAV password " +
-                "for the built-in mount before mounting.");
-            return new RcloneReconcileResult(mounted, unmounted, errors);
-        }
 
         foreach (var config in toMount)
         {
@@ -168,12 +205,6 @@ public sealed class RcloneMountReconciler(
         return $"Could not mount '{mountPoint}': {error}";
     }
 
-    private async Task<bool> RemoteExistsAsync(CancellationToken cancellationToken)
-    {
-        var remotes = await client.ListRemotes(cancellationToken).ConfigureAwait(false);
-        return remotes.Success && (remotes.Remotes?.Contains(RemoteName, StringComparer.Ordinal) ?? false);
-    }
-
     /// <summary>
     /// Canonical form for comparing what is mounted with what is configured.
     /// rclone reports a root mount of <c>infinidysk:/</c> back as <c>infinidysk:</c>,
@@ -191,6 +222,48 @@ public sealed class RcloneMountReconciler(
         var path = string.IsNullOrWhiteSpace(config.RemotePath) ? "/" : config.RemotePath;
         if (!path.StartsWith('/')) path = "/" + path;
         return $"{RemoteName}:{path}";
+    }
+
+    /// <summary>Nanoseconds in one <see cref="TimeSpan"/> tick.</summary>
+    private const long NanosecondsPerTick = 100;
+
+    /// <summary>
+    /// Whether the running mount is using the tuning this configuration asks for.
+    ///
+    /// rclone reads its VFS options once, at mount time, so a change only lands
+    /// on a remount. <c>mount/listmounts</c> reports nothing but the remote and
+    /// the mount point, so the options come from <c>vfs/stats</c> instead.
+    /// </summary>
+    /// <remarks>
+    /// An unreadable answer counts as a match. Remounting on a question we could
+    /// not get an answer to would interrupt playback for nothing.
+    ///
+    /// The automatic cache ceiling is deliberately not compared: it is derived
+    /// from free space, so it moves on its own and every pass would find a
+    /// difference and remount. Only a ceiling somebody set is checked.
+    /// </remarks>
+    private async Task<bool> LiveTuningMatchesAsync(RcloneMountConfig config, CancellationToken cancellationToken)
+    {
+        var stats = await client.GetVfsStats(BuildFs(config), cancellationToken).ConfigureAwait(false);
+        if (!stats.Success || stats.Options is not { } live) return true;
+
+        if (!string.Equals(
+                live.CacheMode,
+                config.VfsCacheMode.ToString().ToLowerInvariant(),
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (live.Links != config.Links) return false;
+        if (live.DirCacheTime != config.DirCacheTime.Ticks * NanosecondsPerTick) return false;
+        if (live.CacheMaxAge != config.VfsCacheMaxAge.Ticks * NanosecondsPerTick) return false;
+        if (live.ReadAhead != (config.ReadAheadBytes ?? 0)) return false;
+
+        var explicitCeiling = cacheSizeLimitBytes ?? config.VfsCacheMaxSizeBytes;
+        if (explicitCeiling is { } ceiling && live.CacheMaxSize != ceiling) return false;
+
+        return true;
     }
 
     private static Dictionary<string, object?> BuildMountOptions(RcloneMountConfig config) => new()

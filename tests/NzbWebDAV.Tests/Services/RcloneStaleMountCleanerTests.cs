@@ -165,6 +165,7 @@ public class RcloneStaleMountCleanerTests
         try
         {
             var responsive = RcloneStaleMountCleaner.IsResponsiveWithin(
+                "/data/never-answers",
                 () =>
                 {
                     blocked.Wait();
@@ -183,8 +184,107 @@ public class RcloneStaleMountCleanerTests
     [Fact]
     public void IsResponsiveWithin_ReportsWhatAProbeThatAnswersSaid()
     {
-        Assert.False(RcloneStaleMountCleaner.IsResponsiveWithin(() => false, TimeSpan.FromSeconds(5)));
-        Assert.True(RcloneStaleMountCleaner.IsResponsiveWithin(() => true, TimeSpan.FromSeconds(5)));
+        Assert.False(
+            RcloneStaleMountCleaner.IsResponsiveWithin("/data/says-no", () => false, TimeSpan.FromSeconds(5)));
+        Assert.True(
+            RcloneStaleMountCleaner.IsResponsiveWithin("/data/says-yes", () => true, TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public void IsResponsiveWithin_DoesNotStartASecondProbe_WhileTheFirstIsStillBlocked()
+    {
+        // A wedged mount's probe never returns, and sweeps repeat -- a daemon
+        // that exits asks for one, and a crash loop asks on every restart. A new
+        // thread per sweep, each blocked forever on the same path, accumulates
+        // for as long as the mount stays wedged.
+        using var blocked = new ManualResetEventSlim(false);
+        var started = 0;
+        Func<bool> probe = () =>
+        {
+            Interlocked.Increment(ref started);
+            blocked.Wait();
+            return false;
+        };
+
+        try
+        {
+            var budget = TimeSpan.FromMilliseconds(100);
+            Assert.True(RcloneStaleMountCleaner.IsResponsiveWithin("/data/wedged", probe, budget));
+            Assert.True(RcloneStaleMountCleaner.IsResponsiveWithin("/data/wedged", probe, budget));
+            Assert.True(RcloneStaleMountCleaner.IsResponsiveWithin("/data/wedged", probe, budget));
+
+            Assert.Equal(1, Volatile.Read(ref started));
+        }
+        finally
+        {
+            blocked.Set();
+        }
+    }
+
+    [Fact]
+    public void IsResponsiveWithin_AsksAgain_OnceAProbeHasAnswered()
+    {
+        // The mount may come back, so a verdict that arrived is not cached.
+        var started = 0;
+        Func<bool> probe = () =>
+        {
+            Interlocked.Increment(ref started);
+            return true;
+        };
+
+        var budget = TimeSpan.FromSeconds(5);
+        RcloneStaleMountCleaner.IsResponsiveWithin("/data/answers", probe, budget);
+        RcloneStaleMountCleaner.IsResponsiveWithin("/data/answers", probe, budget);
+
+        Assert.Equal(2, Volatile.Read(ref started));
+    }
+
+    [Fact]
+    public void CanEnumerate_ReportsADirectoryItCannotReadAsStillAlive()
+    {
+        // Only a disconnected endpoint proves the daemon is gone. A permission
+        // error says nothing about whether something is serving the path, and
+        // calling it stale here would unmount a live library.
+        if (!OperatingSystem.IsLinux()) return;
+
+        var denied = Path.Join(Path.GetTempPath(), $"rclone-denied-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(denied);
+        try
+        {
+            File.SetUnixFileMode(denied, UnixFileMode.None);
+
+            // root reads it regardless, which leaves nothing to assert.
+            if (CanRead(denied)) return;
+
+            Assert.True(RcloneStaleMountCleaner.CanEnumerate(denied));
+        }
+        finally
+        {
+            File.SetUnixFileMode(
+                denied,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            Directory.Delete(denied, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CanEnumerate_ReportsAReadableDirectoryAsAlive()
+    {
+        Assert.True(RcloneStaleMountCleaner.CanEnumerate(Path.GetTempPath()));
+    }
+
+    private static bool CanRead(string path)
+    {
+        try
+        {
+            using var entries = Directory.EnumerateFileSystemEntries(path).GetEnumerator();
+            entries.MoveNext();
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     [Fact]

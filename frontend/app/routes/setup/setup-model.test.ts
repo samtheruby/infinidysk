@@ -109,11 +109,33 @@ describe("setup model", () => {
     expect(draft.config["rclone.builtin.enabled"]).toBe("true");
   });
 
-  it("turns the built-in mount off for a STRM library", () => {
-    // STRM playback opens URLs directly, so there is nothing to mount.
-    const strm = applyStrategy(SETUP_DEFAULT_CONFIG, "strm", {});
+  it("writes no built-in mount settings for a STRM library", () => {
+    // STRM playback opens URLs directly, so there is nothing to mount and the
+    // wizard has no business changing that setting in either direction.
+    const draft = createInitialDraft(
+      { ...SETUP_DEFAULT_CONFIG, "api.import-strategy": "strm" },
+      {},
+      ["manual"],
+    );
 
-    expect(strm["rclone.builtin.enabled"]).toBe("false");
+    const config = completionSetupConfig(SETUP_DEFAULT_CONFIG, draft, {});
+
+    expect("rclone.builtin.enabled" in config).toBe(false);
+    expect("rclone.builtin.mounts" in config).toBe(false);
+  });
+
+  it("survives a symlinks to STRM and back round trip", () => {
+    // A detour through STRM must not silently move the operator between the
+    // built-in mount and their own rclone container, in either direction.
+    const builtin = SETUP_DEFAULT_CONFIG;
+    expect(
+      applyStrategy(applyStrategy(builtin, "strm", {}), "symlinks", {})["rclone.builtin.enabled"],
+    ).toBe("true");
+
+    const sidecar = { ...SETUP_DEFAULT_CONFIG, "rclone.builtin.enabled": "false" };
+    expect(
+      applyStrategy(applyStrategy(sidecar, "strm", {}), "symlinks", {})["rclone.builtin.enabled"],
+    ).toBe("false");
   });
 
   it("does not propose RC notifications when InfiniDysk runs rclone itself", () => {
@@ -140,6 +162,68 @@ describe("setup model", () => {
     expect(config["rclone.builtin.enabled"]).toBe("true");
     expect(JSON.parse(config["rclone.builtin.mounts"] ?? "[]")).toEqual([
       { Id: "library", MountPoint: "/data/nzbdav", RemotePath: "/", Enabled: true },
+    ]);
+  });
+
+  it("keeps the mounts a configured install already has when setup is re-run", () => {
+    // Setup is re-runnable, and an operator who opens it again has usually built
+    // their mount list in Settings. Replacing it with the wizard's single derived
+    // mount deletes shares and tuning the wizard never asked about.
+    const existing = JSON.stringify([
+      {
+        Id: "library",
+        MountPoint: "/data/nzbdav",
+        RemotePath: "/",
+        Enabled: true,
+        ReadAheadBytes: 1024,
+      },
+      { Id: "extra", MountPoint: "/data/extra", RemotePath: "/content", Enabled: true },
+    ]);
+    const baseline = {
+      ...SETUP_DEFAULT_CONFIG,
+      "rclone.mount-dir": "/data/nzbdav",
+      "rclone.builtin.mounts": existing,
+    };
+    const draft = createInitialDraft(baseline, {}, ["manual"]);
+
+    const config = completionSetupConfig(baseline, draft, {});
+
+    expect(JSON.parse(config["rclone.builtin.mounts"] ?? "[]")).toEqual(JSON.parse(existing));
+  });
+
+  it("repoints the first mount when setup moves the mount directory", () => {
+    // The wizard still owns one promise: something enabled has to serve the
+    // directory imports resolve through. Repointing beats adding a second mount
+    // for the same library.
+    const existing = JSON.stringify([
+      {
+        Id: "library",
+        MountPoint: "/data/old",
+        RemotePath: "/",
+        Enabled: true,
+        ReadAheadBytes: 1024,
+      },
+      { Id: "extra", MountPoint: "/data/extra", RemotePath: "/content", Enabled: true },
+    ]);
+    const baseline = {
+      ...SETUP_DEFAULT_CONFIG,
+      "rclone.mount-dir": "/data/old",
+      "rclone.builtin.mounts": existing,
+    };
+    const draft = createInitialDraft(baseline, {}, ["manual"]);
+    draft.config["rclone.mount-dir"] = "/data/new";
+
+    const config = completionSetupConfig(baseline, draft, {});
+
+    expect(JSON.parse(config["rclone.builtin.mounts"] ?? "[]")).toEqual([
+      {
+        Id: "library",
+        MountPoint: "/data/new",
+        RemotePath: "/",
+        Enabled: true,
+        ReadAheadBytes: 1024,
+      },
+      { Id: "extra", MountPoint: "/data/extra", RemotePath: "/content", Enabled: true },
     ]);
   });
 

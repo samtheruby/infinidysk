@@ -100,11 +100,6 @@ export function applyStrategy(
   if (!("usenet.segment-cache.enabled" in managedEnv)) {
     next["usenet.segment-cache.enabled"] = strategy === "strm" ? "true" : "false";
   }
-  // Nothing to mount when playback is URL-shaped.
-  if (strategy === "strm" && !("rclone.builtin.enabled" in managedEnv)) {
-    next["rclone.builtin.enabled"] = "false";
-  }
-
   // RC notifications address a separate rclone container. Proposing them while
   // InfiniDysk runs rclone itself would ask for a host that does not exist, so
   // they are only offered on the sidecar path — where the user must still opt
@@ -125,6 +120,63 @@ export function builtinMountsFor(mountDir: string): string {
   return JSON.stringify([
     { Id: "library", MountPoint: mountDir.trim(), RemotePath: "/", Enabled: true },
   ]);
+}
+
+type StoredMount = {
+  Id?: string;
+  MountPoint?: string;
+  RemotePath?: string;
+  Enabled?: boolean;
+};
+
+const trimTrailingSlash = (path: string) => (path.length > 1 ? path.replace(/\/+$/, "") : path);
+
+function parseStoredMounts(value: string | undefined): StoredMount[] {
+  if (!value?.trim()) return [];
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter(
+      (entry): entry is StoredMount =>
+        typeof entry === "object" && entry !== null && !Array.isArray(entry),
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The mount list a completed built-in symlink setup should save.
+ *
+ * Setup is re-runnable, and an operator who opens it again has usually already
+ * built a mount list in Settings: extra shares, tuned cache settings. Replacing
+ * that with the wizard's single derived mount deletes work the wizard never
+ * asked about, so an existing list is kept as it is.
+ *
+ * The one thing setup still owns is that something enabled serves the directory
+ * symlink imports resolve through -- imports point at `<mount-dir>/.ids/...`,
+ * which only the remote root mounted at exactly that directory exposes. When
+ * nothing does, the first mount is repointed there rather than a second one
+ * added: two mounts for one library is not what the wizard offered.
+ */
+export function builtinMountsForCompletion(existing: string | undefined, mountDir: string): string {
+  const dir = trimTrailingSlash(mountDir.trim());
+  const mounts = parseStoredMounts(existing);
+  if (mounts.length === 0) return builtinMountsFor(mountDir);
+  if (!dir) return JSON.stringify(mounts);
+
+  const covered = mounts.some(
+    (mount) =>
+      mount.Enabled !== false &&
+      trimTrailingSlash((mount.RemotePath ?? "/").trim() || "/") === "/" &&
+      trimTrailingSlash((mount.MountPoint ?? "").trim()) === dir,
+  );
+  if (covered) return JSON.stringify(mounts);
+
+  const [first, ...rest] = mounts;
+  return JSON.stringify([{ ...first, MountPoint: dir, RemotePath: "/", Enabled: true }, ...rest]);
 }
 
 export function parseArrConfig(value: string | undefined): ArrConfig {
@@ -195,10 +247,23 @@ export function completionSetupConfig(
     config[key] = draft.config[key] ?? "";
   }
 
-  // Derived rather than edited: the wizard offers one mount, at the directory
-  // the rest of setup already asked for.
+  // The wizard offers one mount, at the directory the rest of setup already
+  // asked for -- but only writes it where there is nothing to lose. A rerun over
+  // a configured install keeps the mounts it finds.
   if (strategy === "symlinks" && usesBuiltin && !("rclone.builtin.mounts" in managedEnv)) {
-    config["rclone.builtin.mounts"] = builtinMountsFor(draft.config["rclone.mount-dir"] ?? "");
+    config["rclone.builtin.mounts"] = builtinMountsForCompletion(
+      baseline["rclone.builtin.mounts"],
+      draft.config["rclone.mount-dir"] ?? "",
+    );
+  }
+
+  // A STRM library has nothing to mount, so the wizard says nothing about the
+  // built-in mount either way. Writing it would clobber a deliberate choice the
+  // operator made elsewhere, and a detour through STRM would silently move them
+  // onto the sidecar path.
+  if (strategy === "strm") {
+    delete config["rclone.builtin.enabled"];
+    delete config["rclone.builtin.mounts"];
   }
   return config;
 }
