@@ -143,13 +143,10 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
-On Linux, also run `cargo test --manifest-path vendor/infinidysk-fuse/Cargo.toml --features tokio-runtime,unprivileged --locked` for notification tests.
-For its opt-in kernel tests, add `-- --ignored --test-threads=1`; concurrent test mounts can fail to unmount.
 With `/dev/fuse` and mount permission, run `cargo test -p infinidysk --test repair_mount -- --ignored` to check repair publication through the kernel.
 
 With `par2` installed, run `cargo run --release --locked -p infinidysk-bench -- --scenario par2-` to measure playback with idle, active, cancelled, and failed repairs on loopback NNTP. The benchmark uses `par2` to generate the fixture before timing.
 
-`vendor/infinidysk-fuse` contains infinidysk-fuse 0.10.1 with checked inode invalidation and the current Tokio descriptor registration API. Keep the invalidation patch until upstream reports notification write errors. Its original license is retained.
 The workspace is a set of crates under [`crates/`](crates/). The product binary is [`crates/infinidysk`](crates/infinidysk); it embeds the web UI from `ui/dist`. The other crates are libraries (NNTP, yEnc, streaming, archives, PAR2, queue, health, VFS, FUSE, WebDAV, database), and dependencies point downward only.
 
 To work on the UI, run the backend and the Vite dev server side by side. Vite proxies API calls to `http://127.0.0.1:3000`; set `BACKEND_URL` to point it elsewhere.

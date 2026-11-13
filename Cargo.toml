@@ -1,11 +1,10 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-exclude = ["vendor/infinidysk-fuse"]
 
 [patch.crates-io]
-# Keep checked kernel invalidation local until upstream exposes its write result.
-infinidysk-fuse = { path = "vendor/infinidysk-fuse" }
+# Remove once https://github.com/infinidysk/infinidysk-fuse/pull/63 is released.
+infinidysk-fuse = { git = "https://github.com/infinidysk/infinidysk-fuse", rev = "b5634ef4b2fe70609d569fe027ab3afc26795dab" }
 
 [workspace.package]
 # ponytail: crate versions stay 0.0.0; release-please owns the product version in version.txt.

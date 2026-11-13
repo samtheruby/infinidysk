@@ -1517,6 +1517,7 @@ dependencies = [
 [[package]]
 name = "infinidysk-fuse"
 version = "0.10.1"
+source = "git+https://github.com/infinidysk/infinidysk-fuse?rev=b5634ef4b2fe70609d569fe027ab3afc26795dab#b5634ef4b2fe70609d569fe027ab3afc26795dab"
 dependencies = [
  "async-notify",
  "bytes",
@@ -2028,9 +2029,9 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.2.4"
+version = "1.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1788edb87fdc09c7e26304471e2f5be8cdefb1b6930d6e3985fc02ff53bf86ee"
+checksum = "20521a903f02b0a573cd6840e9d0a5a0cc043d361fe924092cd70f8556cc9c4a"
 dependencies = [
  "libc",
  "wasi",

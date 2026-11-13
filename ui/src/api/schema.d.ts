@@ -3735,7 +3735,7 @@ export interface components {
             /**
              * Format: uuid
              * @description Stable across edits, so masked secrets can be matched back.
-             * @default 01a1d1bb-4cf1-7284-acad-8ec332c5a04c
+             * @default 01a1d6c5-9cbf-7205-b7f7-96e65e2767ea
              */
             id: string;
             /**
