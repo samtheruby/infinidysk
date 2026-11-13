@@ -8,6 +8,7 @@ mod client;
 mod connection;
 mod downloads;
 mod missing;
+pub mod patch;
 mod pool;
 mod resolve;
 mod stats;
@@ -20,7 +21,7 @@ use std::pin::Pin;
 
 use bytes::Bytes;
 
-pub use article::Body;
+pub use article::{Body, MAX_DECODED_LEN};
 pub use bandwidth::Bandwidth;
 pub use client::{BodySink, Client, Lease, Provider};
 pub use connection::{Connection, ConnectionStats, Endpoint, Phase, Progress, Timing, TlsMode};

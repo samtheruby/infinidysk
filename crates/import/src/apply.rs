@@ -1770,6 +1770,7 @@ fn proof(p: &csharp::Par2Proof) -> Option<Par2Proof> {
         return None;
     };
     Some(Par2Proof {
+        set_id: None,
         file_length: u64::try_from(p.file_length).ok()?,
         slice_size: u32::try_from(p.slice_size).ok()?,
         slice_md5: slice_md5.to_vec(),
