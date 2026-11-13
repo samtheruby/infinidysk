@@ -241,6 +241,7 @@ pub async fn apply_with_progress(
     progress: impl Fn(Progress) + Sync,
 ) -> Result<Imported, Error> {
     let mut cs = open(config).await?;
+    crate::legacy_repairs::stage(config, db).await?;
     let blobs = config.join("blobs");
     // C# wrote `DateTime.Now`, so its times are wall clock in its container's zone (`TZ`).
     let tz = TimeZone::system();

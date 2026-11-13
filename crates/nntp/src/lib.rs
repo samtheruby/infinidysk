@@ -66,6 +66,8 @@ pub enum Error {
     AuthRejected { code: u16, reply: Box<str> },
     #[error("invalid {0}")]
     InvalidArgument(&'static str),
+    #[error("local repair unavailable: {0}")]
+    Repair(&'static str),
     #[error("tls setup failed")]
     Tls(#[from] rustls::Error),
     #[error("article body exceeds {} bytes", article::MAX_DECODED_LEN)]
