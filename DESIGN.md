@@ -869,6 +869,19 @@ Sign-in, first-run setup and the upgrade-failed screen sit outside the app shell
 - Field errors under the field; a failed submission below the action with the input kept, focus returned to the field to fix, and API errors rewritten as "what failed, then the fix"; a blocked state as an `Alert` in the card.
 - Username fields turn off autocapitalize, autocorrect and spellcheck; usernames are case-sensitive.
 
+### PAR2 work
+
+- File details keep **Check availability**, **Repair with PAR2** and **Repair via Arr** as separate actions. Availability explains STAT requests and bounded body spot checks; never imply full byte integrity. Repair explains that full source sets may be read.
+- Queued work is pending, not success. Show its state and reason, decoded provider bytes, saved bytes, verified scope and duration. Announce updates in a polite status region; keep focus in place.
+- Reconstruction also shows completed provider reads and missing results, so missing articles remain visible progress when no body bytes arrive. Counts include repeated reads and cached misses; they are not a completion percentage or unique-article total.
+- Separate availability success, observed damage and checks that could not finish from PAR2 repair outcomes. Explain that totals count historical jobs, not unique files or proven irrecoverable data. Resource failures show the phase, required/available bytes and a retry action; cancellations remain separate from failures.
+- Disable duplicate requests while pending. Offer cancellation with an accurate “Cancellation requested” response; accepted publication may still finish.
+- Health's library verification queues small resumable batches only after explicit confirmation. Stopping enumeration leaves already queued checks visible and cancellable in file details.
+- Reuse existing outline buttons, confirmation dialogs and settings experiments. Actions and status rows wrap on mobile.
+- Settings → PAR2 repair exposes validated worker limits and storage capacity, applied at the next attempt. Keep the page and Health's backlog visible while the experiment is disabled, with an enable-and-restart link. On Health, place the PAR2 backlog immediately before Rejected releases, after the schedule.
+- Separate read-only availability scans from check-and-repair. Show enumeration progress against its snapshot file count, independently of completed jobs. Show checked/total articles for availability; reconstruction progress stays indeterminate until its scope is known. Explain independent workers and fair manual priority.
+- Show storage use against capacity, all pending jobs and the latest twenty results. Each job identifies its file or source set, phase/reason, attempts, retry time, live provider/saved bytes and elapsed time. Allow cancellation from this list. Keep unknown per-job progress indeterminate; do not invent a percentage.
+
 ## Copywriting
 
 (Supabase: [Copywriting](https://supabase.com/design-system/docs/copywriting))
