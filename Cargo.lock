@@ -1514,8 +1514,7 @@ dependencies = [
 [[package]]
 name = "infinidysk-fuse"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f074f6f3d1a60238cf914f56a7466bae65d981308f1aa42e8b00b808aac913d"
+source = "git+https://github.com/infinidysk/infinidysk-fuse?rev=b5634ef4b2fe70609d569fe027ab3afc26795dab#b5634ef4b2fe70609d569fe027ab3afc26795dab"
 dependencies = [
  "async-notify",
  "bytes",
@@ -1698,6 +1697,7 @@ version = "0.0.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
+ "bytes",
  "futures-util",
  "hmac 0.13.0",
  "http-body-util",
@@ -1715,7 +1715,6 @@ dependencies = [
  "serde",
  "sha2 0.11.1",
  "tokio",
- "tokio-util",
  "tower",
  "tracing",
  "tracing-subscriber",
